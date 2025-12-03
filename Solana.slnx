@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Solana/Solana.csproj" />
+  <Project Path="SolanaSniper/SolanaSniper.csproj" />
+</Solution>
