@@ -20,18 +20,18 @@ public sealed class TxAnalyzer
 
 		async ValueTask<(Delta delta, string mint)> Core()
 		{
-			var _http = new HttpClient() { BaseAddress = new(restUrl) };
+			var http = new HttpClient { BaseAddress = new Uri(restUrl) };
 
 			/* 1.  Формируем тело запроса */
 			var content = GetContent(txSignature);
 			/* 2.  Отправляем */
-			using var resp = await _http.PostAsync("", content, ct).ConfigureAwait(false);
+			using var resp = await http.PostAsync("", content, ct).ConfigureAwait(false);
 			resp.EnsureSuccessStatusCode();
 
-			var a = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+			var a = resp.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
 
 			/* 3.  Читаем ответ */
-			using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+			await using var stream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
 			var rent = ArrayPool<byte>.Shared.Rent(64 * 1024);
 			try
 			{
