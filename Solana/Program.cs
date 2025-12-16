@@ -1,13 +1,12 @@
-﻿using System;
-using System.Buffers;
+﻿using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading;
 using System.Threading.Channels;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
+
+namespace  Solana;
 
 // JSON Source Generator Context
 [JsonSourceGenerationOptions(
@@ -33,36 +32,28 @@ public record SubscribeParams(
 );
 
 // Высокопроизводительный WebSocket клиент для мониторинга Solana транзакций
-public class SolanaWalletMonitor : IAsyncDisposable
+public class SolanaWalletMonitor(string wsUrl, Dictionary<string, string> wallets) : IAsyncDisposable
 {
-	private readonly ClientWebSocket _ws;
-	private readonly string _wsUrl;
-	private readonly Channel<string> _messageChannel;
-	private readonly CancellationTokenSource _cts;
-	private readonly Dictionary<string, string> _wallets; // Address -> Name
+	private readonly ClientWebSocket _ws = new();
+	private readonly CancellationTokenSource _cts = new();
+
+	private readonly Channel<string> _messageChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+	{
+		SingleReader = true,
+		SingleWriter = false
+	});
+	
+	// Address -> Name
 	private int _requestId;
 
 	// Маппинги для отслеживания подписок
 	private readonly ConcurrentDictionary<int, string> _pendingRequests = new();
 	private readonly ConcurrentDictionary<int, string> _activeSubscriptions = new();
 
-	public SolanaWalletMonitor(string wsUrl, Dictionary<string, string> wallets)
-	{
-		_ws = new ClientWebSocket();
-		_wsUrl = wsUrl;
-		_wallets = wallets;
-		_cts = new CancellationTokenSource();
-		_messageChannel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
-		{
-			SingleReader = true,
-			SingleWriter = false
-		});
-	}
-
 	public async Task StartAsync()
 	{
-		await _ws.ConnectAsync(new Uri(_wsUrl), _cts.Token);
-		Console.WriteLine($"✓ Подключено к {_wsUrl}");
+		await _ws.ConnectAsync(new Uri(wsUrl), _cts.Token);
+		Console.WriteLine($"✓ Подключено к {wsUrl}");
 
 		// Запускаем задачи параллельно
 		var receiveTask = ReceiveMessagesAsync(_cts.Token);
@@ -76,7 +67,7 @@ public class SolanaWalletMonitor : IAsyncDisposable
 
 	private async Task SubscribeToWalletsAsync()
 	{
-		foreach (var wallet in _wallets)
+		foreach (var wallet in wallets)
 		{
 			var id = Interlocked.Increment(ref _requestId);
 			_pendingRequests.TryAdd(id, wallet.Key);
@@ -177,17 +168,10 @@ public class SolanaWalletMonitor : IAsyncDisposable
 			? sub.GetInt32() : 0;
 
 		// Определяем кошелек по ID подписки
-		string walletDisplay = "Unknown";
+		var walletDisplay = "Unknown";
 		if (_activeSubscriptions.TryGetValue(subscription, out var walletAddress))
 		{
-			if (_wallets.TryGetValue(walletAddress, out var name))
-			{
-				walletDisplay = name;
-			}
-			else
-			{
-				walletDisplay = walletAddress;
-			}
+			walletDisplay = wallets.GetValueOrDefault(walletAddress, walletAddress);
 		}
 
 		if (!parameters.TryGetProperty("result", out var resultData)) return;
@@ -214,39 +198,29 @@ public class SolanaWalletMonitor : IAsyncDisposable
             ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             """);
 
-		if (value.TryGetProperty("data", out var data))
+		if (!value.TryGetProperty("data", out var data)) return;
+		string dataDisplay;
+		if (data.ValueKind == JsonValueKind.Array && data.GetArrayLength() == 2)
 		{
-			string dataDisplay = "";
-
-			if (data.ValueKind == JsonValueKind.Array && data.GetArrayLength() == 2)
-			{
-				var content = data[0].GetString() ?? "";
-				var encoding = data[1].GetString();
+			var content = data[0].GetString() ?? "";
+			var encoding = data[1].GetString();
 				
-				if (encoding == "base64")
-				{
-					dataDisplay = content;
-				}
-				else
-				{
-					dataDisplay = $"[{encoding}] {content}";
-				}
-			}
-			else
-			{
-				dataDisplay = data.ToString();
-			}
+			dataDisplay = encoding == "base64" ? content : $"[{encoding}] {content}";
+		}
+		else
+		{
+			dataDisplay = data.ToString();
+		}
 
-			if (!string.IsNullOrEmpty(dataDisplay))
-			{
-				Console.WriteLine($"📦 Data: {dataDisplay}");
-			}
+		if (!string.IsNullOrEmpty(dataDisplay))
+		{
+			Console.WriteLine($"📦 Data: {dataDisplay}");
 		}
 	}
 
 	public async ValueTask DisposeAsync()
 	{
-		_cts.Cancel();
+		await _cts.CancelAsync();
 
 		if (_ws.State == WebSocketState.Open)
 		{

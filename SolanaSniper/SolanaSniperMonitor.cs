@@ -1,7 +1,6 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -167,7 +166,7 @@ public class SolanaSniperMonitor : IAsyncDisposable
 					var owner = MemoryPool<byte>.Shared.Rent(length);
 					
 					ms.Position = 0;
-					ms.Read(owner.Memory.Span.Slice(0, length));
+					ms.ReadExactly(owner.Memory.Span.Slice(0, length));
 					
 					var now = DateTime.UtcNow;
 					await _messageChannel.Writer.WriteAsync(new MessageBuffer(owner, length, now), ct);
@@ -258,10 +257,10 @@ public class SolanaSniperMonitor : IAsyncDisposable
 		key = default;
 		var reader = new Utf8JsonReader(json, isFinalBlock: true, state: default);
 
-		int subscription = 0;
+		var subscription = 0;
 		long slot = 0;
-		string signature = null;
-		bool hasError = false;
+		string? signature = null;
+		var hasError = false;
 
 		while (reader.Read())
 		{
@@ -328,12 +327,12 @@ public class SolanaSniperMonitor : IAsyncDisposable
 		// Для logsNotification
 		int? notifSubscription = null;
 		string signature = null;
-		bool hasError = false;
+		var hasError = false;
 
 		// Флаги, где мы находимся
-		bool inParams = false;
-		bool inResult = false;
-		bool inValue = false;
+		var inParams = false;
+		var inResult = false;
+		var inValue = false;
 
 		while (reader.Read())
 		{
@@ -416,19 +415,16 @@ public class SolanaSniperMonitor : IAsyncDisposable
 		// Логика обработки после парсинга
 		
 		// 1. Подтверждение подписки
-		if (id.HasValue && subscriptionId.HasValue)
+		if (!id.HasValue || !subscriptionId.HasValue) return;
+		if (_pendingConfirmations.TryRemove(id.Value, out var tcs))
 		{
-			if (_pendingConfirmations.TryRemove(id.Value, out var tcs))
-			{
-				tcs.TrySetResult(subscriptionId.Value);
-			}
-			return;
+			tcs.TrySetResult(subscriptionId.Value);
 		}
 	}
 
 	public async ValueTask DisposeAsync()
 	{
-		_cts.Cancel();
+		await _cts.CancelAsync();
 		if (_ws.State == WebSocketState.Open)
 			await _ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disposing", CancellationToken.None);
 		_ws.Dispose();
