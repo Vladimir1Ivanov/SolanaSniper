@@ -28,7 +28,7 @@ public sealed class TxAnalyzer
 			/* 1.  Формируем тело запроса */
 			var content = GetContent(txSignature);
 			/* 2.  Отправляем */
-			using var resp = await http.PostAsync("", content, ct).ConfigureAwait(false);
+			using var resp = await _http.PostAsync("", content, ct).ConfigureAwait(false);
 			resp.EnsureSuccessStatusCode();
 
 			var a = resp.Content.ReadAsStringAsync(ct).GetAwaiter().GetResult();
