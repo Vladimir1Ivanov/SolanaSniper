@@ -5,7 +5,8 @@ public sealed record Endpoints(
 	string WssUrl,
 	string JupiterQuote,
 	string JupiterSwap,
-	string JitoBundle);
+	string JitoBundle,
+	string DbPath);
 
 public sealed record ScalperOptions(
 	string PrivateKey,

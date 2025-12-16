@@ -19,6 +19,7 @@ public class SolanaSniperMonitor : IAsyncDisposable
 	private readonly CancellationTokenSource _cts;
 	private readonly Dictionary<string, string> _wallets; 
 	private int _requestId;
+	private readonly LogChannel _log;
 
 	// Маппинг ID подписки -> Имя кошелька
 	private readonly ConcurrentDictionary<int,KeyValuePair<string, string>> _activeSubscriptions = new();
@@ -46,6 +47,7 @@ public class SolanaSniperMonitor : IAsyncDisposable
 
 	public SolanaSniperMonitor(Endpoints endpoints, Dictionary<string, string> wallets)
 	{
+		_log = new(endpoints.DbPath);
 		_endpoints = endpoints;
 		_ws = new ClientWebSocket();
 		_wsUrl = endpoints.WssUrl;
@@ -146,7 +148,7 @@ public class SolanaSniperMonitor : IAsyncDisposable
 					var owner = MemoryPool<byte>.Shared.Rent(result.Count);
 					buffer.AsSpan(0, result.Count).CopyTo(owner.Memory.Span);
 					
-					var now = DateTime.Now;
+					var now = DateTime.UtcNow;
 					await _messageChannel.Writer.WriteAsync(new MessageBuffer(owner, result.Count, now), ct);
 				}
 				else
@@ -161,15 +163,13 @@ public class SolanaSniperMonitor : IAsyncDisposable
 						ms.Write(buffer, 0, result.Count);
 					} while (!result.EndOfMessage && !ct.IsCancellationRequested);
 
-					// Копируем из MemoryStream в пул памяти
 					var length = (int)ms.Length;
 					var owner = MemoryPool<byte>.Shared.Rent(length);
 					
 					ms.Position = 0;
-					// В .NET Core/5+ MemoryStream.Read принимает Span
 					ms.Read(owner.Memory.Span.Slice(0, length));
 					
-					var now = DateTime.Now;
+					var now = DateTime.UtcNow;
 					await _messageChannel.Writer.WriteAsync(new MessageBuffer(owner, length, now), ct);
 				}
 			}
@@ -196,6 +196,18 @@ public class SolanaSniperMonitor : IAsyncDisposable
 				{
 					if (TryReadLogsNotificationKey(msgBuffer.Data.Span, out var k))
 					{
+						var now = DateTime.UtcNow;
+						var lag = (now - msgBuffer.ReceivedAt).TotalMilliseconds;
+						var entry = new RpcLog(
+							UtcTicks: DateTime.UtcNow.Ticks,
+							Method: "logSubscribe",
+							RequestId: "1",
+							RpcEndpoint: "https://rpc.ny.shyft.to?api_key=7A9RfMv0JKI6CxZn",
+							StatusCode: 200,
+							RoundTripMs: lag,
+							JsonBody: msgBuffer.Data.Span.ToArray());
+						_log.TryLog(entry);
+
 						// Если есть ошибка транзакции - игнорируем
 						if (k.HasError)
 							continue;
@@ -204,12 +216,8 @@ public class SolanaSniperMonitor : IAsyncDisposable
 							continue;
 						var walletName = pair.Value;
 
-						var now = DateTime.Now;
-						var lag = (now - msgBuffer.ReceivedAt).TotalMilliseconds;
-
-						
 						var sw = Stopwatch.StartNew();
-						var (delta, mint) = await TxAnalyzer.GetWalletDeltaAsync(_endpoints.RestUrl, k.Signature, pair.Key, ct);
+						var (delta, mint) = await TxAnalyzer.GetWalletDeltaAsync(_log, _endpoints.RestUrl, k.Signature, pair.Key, ct);
 						sw.Stop();
 
 						if (delta.Side == Side.None)
@@ -242,8 +250,6 @@ public class SolanaSniperMonitor : IAsyncDisposable
 			}
 		}
 	}
-
-	
 
 	public static bool TryReadLogsNotificationKey(
 		ReadOnlySpan<byte> json,

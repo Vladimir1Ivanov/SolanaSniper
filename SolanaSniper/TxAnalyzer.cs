@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ public sealed class TxAnalyzer
 {
 	/* -------------- public API -------------- */
 	public static ValueTask<(Delta delta, string mint)> GetWalletDeltaAsync(
+		LogChannel log,
 		string restUrl,
 		string txSignature,
 		string wallet,
@@ -20,6 +22,7 @@ public sealed class TxAnalyzer
 
 		async ValueTask<(Delta delta, string mint)> Core()
 		{
+			var sw = Stopwatch.StartNew();
 			var _http = new HttpClient() { BaseAddress = new(restUrl) };
 
 			/* 1.  Формируем тело запроса */
@@ -40,6 +43,18 @@ public sealed class TxAnalyzer
 					total += read;
 
 				var (delta, mint) = ParseDelta(rent.AsSpan(0, total), wallet);
+				sw.Stop();
+
+				var entry = new RpcLog(
+							UtcTicks: DateTime.UtcNow.Ticks,
+							Method: "getTransaction",
+							RequestId: "2",
+							RpcEndpoint: "https://rpc.ny.shyft.to?api_key=7A9RfMv0JKI6CxZn",
+							StatusCode: 200,
+							RoundTripMs:sw.ElapsedMilliseconds,
+							JsonBody: rent);
+				log.TryLog(entry);
+
 				return (delta, mint);
 			}
 			finally

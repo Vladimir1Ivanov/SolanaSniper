@@ -5,12 +5,6 @@ namespace SolanaSniper;
 
 public class Program
 {
-	////public const string wsUrl = "wss://rpc.ny.shyft.to?api_key=7A9RfMv0JKI6CxZn";
-	//public const string wsUrl = "wss://mainnet.helius-rpc.com/?api-key=719ecf2d-f533-46de-92ba-fc4e929b5b81";
-
-	////public const string restUrl = "https://rpc.ny.shyft.to?api_key=7A9RfMv0JKI6CxZn";
-	//public const string restUrl = "https://mainnet.helius-rpc.com/?api-key=719ecf2d-f533-46de-92ba-fc4e929b5b81";
-
 	public static async Task Main(string[] args)
 	{
 		var cfgBuilder = new ConfigurationBuilder()

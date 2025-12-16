@@ -10,3 +10,12 @@ public readonly record struct LogsNotificationKey(
 		string Signature,
 		bool HasError
 	);
+
+public readonly record struct RpcLog(
+	long UtcTicks,
+	string Method,
+	string RequestId,
+	string RpcEndpoint,
+	int StatusCode,
+	double RoundTripMs,
+	byte[] JsonBody);
